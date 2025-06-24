@@ -599,7 +599,9 @@ function RunnerUI:update_ui()
 				local function set_buf_new_mode(bufnr, placeholder)
 					vim.bo[bufnr].modifiable = true
 					vim.bo[bufnr].readonly = false
-					vim.bo[bufnr].buftype = "" -- Normal buffer
+					vim.bo[bufnr].buftype = "nofile" -- No file buffer type to avoid save warnings
+					vim.bo[bufnr].bufhidden = "hide" -- Hide buffer when not displayed
+					vim.bo[bufnr].swapfile = false -- No swap file
 					vim.bo[bufnr].modified = false -- Mark as not modified initially
 					api.nvim_buf_set_lines(bufnr, 0, -1, false, {}) -- Empty content
 				end
@@ -610,6 +612,9 @@ function RunnerUI:update_ui()
 				-- Output and errors windows should be read-only with placeholder text
 				local function set_buf_content_readonly(bufnr, content)
 					vim.bo[bufnr].modifiable = true
+					vim.bo[bufnr].buftype = "nofile" -- No file buffer type
+					vim.bo[bufnr].bufhidden = "hide" -- Hide buffer when not displayed  
+					vim.bo[bufnr].swapfile = false -- No swap file
 					api.nvim_buf_set_lines(bufnr, 0, -1, false, content or {})
 					vim.bo[bufnr].modifiable = false
 					vim.bo[bufnr].readonly = true
@@ -840,6 +845,9 @@ function RunnerUI:update_ui()
 			-- Set content for output windows (read-only)
 			local function set_buf_content_readonly(bufnr, content)
 				vim.bo[bufnr].modifiable = true
+				vim.bo[bufnr].buftype = "nofile" -- No file buffer type
+				vim.bo[bufnr].bufhidden = "hide" -- Hide buffer when not displayed  
+				vim.bo[bufnr].swapfile = false -- No swap file
 				api.nvim_buf_set_lines(bufnr, 0, -1, false, content or {})
 				vim.bo[bufnr].modifiable = false
 				vim.bo[bufnr].readonly = true
@@ -849,7 +857,9 @@ function RunnerUI:update_ui()
 			local function set_buf_content_editable(bufnr, content)
 				vim.bo[bufnr].modifiable = true
 				vim.bo[bufnr].readonly = false
-				vim.bo[bufnr].buftype = "" -- Normal buffer
+				vim.bo[bufnr].buftype = "nofile" -- No file buffer type to avoid save warnings
+				vim.bo[bufnr].bufhidden = "hide" -- Hide buffer when not displayed
+				vim.bo[bufnr].swapfile = false -- No swap file
 				vim.bo[bufnr].modified = false -- Mark as not modified initially
 				api.nvim_buf_set_lines(bufnr, 0, -1, false, content or {})
 			end
