@@ -24,7 +24,10 @@
 - Configurable (see [Configuration](#configuration)). You can even configure [every folder individually](#local-configuration)
 - Testcases can be stored in a single file or in multiple text files, see [usage notes](#usage-notes)
 - Easily [add](#add-or-edit-a-testcase), [edit](#add-or-edit-a-testcase) and [delete](#remove-a-testcase) testcases
+- **Inline testcase management**: Add, edit, and delete testcases directly within the Runner UI with intuitive keyboard shortcuts - no need to leave the testing interface
 - [Run](#run-testcases) your program across all the testcases, showing results and execution data in a nice interactive UI
+- **Streamlined workflow**: Save and run testcases with simple key presses (`<CR>` in normal mode, `<C-s>` or `<C-CR>` in insert mode)
+- **Immediate feedback**: Changes to testcases are applied and executed instantly for rapid iteration
 - [Download](#receive-testcases-problems-and-contests) testcases, problems and contests automatically from competitive programming platforms
 - [Templates](#templates-for-received-problems-and-contests) for received problems and contests
 - View diff between actual and expected output
@@ -106,6 +109,31 @@ To jump between input and output windows press either `<C-h>`, `<C-l>`, or `<C-i
 
 Of course these keybindings can be customized: see `editor_ui` ➤ `normal_mode_mappings` and `editor_ui` ➤ `insert_mode_mappings` in [configuration](#configuration)
 
+#### Inline testcase management in Runner UI
+For a more streamlined workflow, you can add, edit, and delete testcases directly within the Runner UI without leaving the interface:
+
+**Adding testcases:**
+- Navigate to the "NEW" entry at the bottom of the testcase list
+- Press `<CR>` (Enter) to start adding a new testcase
+- Enter input and expected output in the respective windows (both start empty for easy editing)
+- **Normal mode**: Press `<CR>` to save and run the new testcase
+- **Insert mode**: Press `<C-s>` or `<C-CR>` to save and run the new testcase
+- The testcase will be automatically saved and executed
+
+**Editing testcases:**
+- Select any existing testcase in the list
+- Press `<CR>` (Enter) to edit it inline
+- Modify the input and/or expected output as needed
+- **Normal mode**: Press `<CR>` to save changes and re-run
+- **Insert mode**: Press `<C-s>` or `<C-CR>` to save changes and re-run
+
+**Deleting testcases:**
+- Select the testcase you want to delete
+- Press `x` to delete it immediately (no confirmation required)
+- The cursor will automatically move to the next available testcase
+
+This inline management approach eliminates the need for separate editor windows and provides a seamless testcase management experience.
+
 ### Remove a testcase
 Launch `:CompetiTest delete_testcase`. If you want to specify testcase number directly in the command line you can use `:CompetiTest delete_testcase x`, where `x` is a number representing the testcase you want to remove.
 
@@ -136,6 +164,14 @@ If you have previously closed the UI and you want to re-open it without re-execu
 - View stdout in a bigger window by pressing `o` or `O`
 - View stderr in a bigger window by pressing `e` or `E`
 - Toggle diff view between actual and expected output by pressing `d` or `D`
+
+#### Testcase management
+- **Add testcase**: Navigate to the "NEW" entry and press `<CR>` to add a new testcase inline
+- **Edit testcase**: Press `<CR>` on any existing testcase to edit it inline
+- **Delete testcase**: Press `x` to delete the current testcase (no confirmation required)
+- **Save changes**: 
+  - **Normal mode**: Press `<CR>` to save and run
+  - **Insert mode**: Press `<C-s>` or `<C-CR>` to save and run
 
 Of course all these keybindings can be customized: see `runner_ui` ➤ `mappings` in [configuration](#configuration)
 
@@ -249,6 +285,8 @@ require('competitest').setup {
 			view_stdout = { "o", "O" },
 			view_stderr = { "e", "E" },
 			toggle_diff = { "d", "D" },
+			edit_testcase = "<CR>",
+			delete_testcase = "x",
 			close = { "q", "Q" },
 		},
 		viewer = {
@@ -365,6 +403,8 @@ require('competitest').setup {
 		- `view_stdout`: keymaps to view programs's output (stdout) in a bigger window
 		- `view_stderr`: keymaps to view programs's errors (stderr) in a bigger window
 		- `toggle_diff`: keymaps to toggle diff view between actual and expected output
+		- `edit_testcase`: keymaps to edit the selected testcase inline
+		- `delete_testcase`: keymaps to delete the selected testcase
 		- `close`: keymaps to close runner user interface
 	- `viewer`: keyboard mappings used in [viewer window](#view-details)
 		- `width`: a value from 0 to 1, representing the ratio between viewer window width and Neovim width
