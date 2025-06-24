@@ -424,4 +424,118 @@ function TCRunner:resize_ui()
 	end
 end
 
+---Add a new testcase inline
+---@param input_text string testcase input
+---@param output_text string testcase expected output
+function TCRunner:add_inline_testcase(input_text, output_text)
+	-- Validate input
+	if not input_text or input_text:match("^%s*$") then
+		utils.notify("Cannot add testcase: input is empty", "WARN")
+		return
+	end
+	
+	local testcases = require("competitest.testcases")
+	local success, tctbl = pcall(testcases.buf_get_testcases, self.bufnr)
+	if not success then
+		utils.notify("Error reading testcases: " .. tostring(tctbl), "ERROR")
+		return
+	end
+	
+	-- Find next available testcase number
+	local tcnum = 0
+	while tctbl[tcnum] do
+		tcnum = tcnum + 1
+	end
+	
+	-- Normalize empty output
+	if output_text:match("^%s*$") then
+		output_text = ""
+	end
+	
+	-- Save to file
+	local save_success = false
+	if self.config.testcases_use_single_file then
+		tctbl[tcnum] = { input = input_text, output = output_text }
+		save_success = pcall(testcases.single_file.buf_write, self.bufnr, tctbl)
+	else
+		save_success = pcall(testcases.io_files.buf_write_pair, self.bufnr, tcnum, input_text, output_text)
+	end
+	
+	if not save_success then
+		utils.notify("Error saving testcase to file", "ERROR")
+		return
+	end
+	
+	-- Add to tcdata
+	local new_tc = {
+		stdin = vim.split(input_text, "\n", { plain = true }),
+		expout = output_text ~= "" and vim.split(output_text, "\n", { plain = true }) or nil,
+		stdout = {},
+		stderr = {},
+		tcnum = tcnum,
+		status = "",
+		hlgroup = "CompetiTestRunning",
+		timelimit = self.config.maximum_time,
+		timer = nil,
+		time = nil,
+		running = false,
+		killed = false,
+		exit_code = nil,
+		exit_signal = nil,
+	}
+	
+	table.insert(self.tcdata, new_tc)
+	
+	-- Update UI first
+	self:update_ui(true)
+	
+	-- Run the testcase
+	local tcindex = #self.tcdata
+	if self.compile and tcindex == 1 then
+		-- If we need compilation and this is the first testcase, compile first
+		self:execute_testcase(tcindex, self.cc, self.compile_directory)
+	else
+		-- Run directly
+		self:execute_testcase(tcindex, self.rc, self.running_directory)
+	end
+	
+	utils.notify("Testcase " .. tcnum .. " added and running", "INFO")
+end
+
+---Delete a testcase
+---@param tcindex integer testcase index in `self.tcdata`
+function TCRunner:delete_testcase(tcindex)
+	if not self.tcdata[tcindex] then
+		utils.notify("Cannot delete testcase: invalid index", "WARN")
+		return
+	end
+	
+	local tc = self.tcdata[tcindex]
+	
+	-- Kill process if running
+	if tc.running then
+		self:kill_process(tcindex)
+	end
+	
+	-- Remove from file
+	local testcases = require("competitest.testcases")
+	local success, tctbl = pcall(testcases.buf_get_testcases, self.bufnr)
+	if success then
+		tctbl[tc.tcnum] = nil
+		if self.config.testcases_use_single_file then
+			pcall(testcases.single_file.buf_write, self.bufnr, tctbl)
+		else
+			pcall(testcases.io_files.buf_delete_pair, self.bufnr, tc.tcnum)
+		end
+	end
+	
+	-- Remove from tcdata
+	table.remove(self.tcdata, tcindex)
+	
+	-- Update UI
+	self:update_ui(true)
+	
+	utils.notify("Testcase " .. tc.tcnum .. " deleted", "INFO")
+end
+
 return TCRunner

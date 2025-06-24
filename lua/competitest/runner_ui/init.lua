@@ -40,6 +40,9 @@ local utils = require("competitest.utils")
 ---| "view_stdout" view program output (stdout) in a bigger window
 ---| "view_stderr" view program errors (stderr) in a bigger window
 ---| "toggle_diff" toggle diff view between actual and expected output
+---| "add_testcase" add a new testcase in runner UI
+---| "edit_testcase" edit current testcase inline
+---| "delete_testcase" delete current testcase
 ---| "close" close runner UI
 
 ---Testcases Runner UI
@@ -145,6 +148,23 @@ function RunnerUI:show_ui()
 			end
 		end
 
+		-- Add default empty mappings for any missing actions
+		runner_ui_mappings = vim.tbl_extend("keep", runner_ui_mappings, {
+			run_again = {},
+			run_all_again = {},
+			kill = {},
+			kill_all = {},
+			view_input = {},
+			view_output = {},
+			view_stdout = {},
+			view_stderr = {},
+			toggle_diff = {},
+			add_testcase = {},
+			edit_testcase = {},
+			delete_testcase = {},
+			close = {},
+		})
+
 		local function hide_ui() -- hide viewer popup if visible, otherwise close ui
 			if self.viewer_visible then
 				self.windows.vw:hide()
@@ -176,12 +196,25 @@ function RunnerUI:show_ui()
 		end
 
 		local function get_testcase_index_by_line()
-			return api.nvim_win_get_cursor(self.windows.tc.winid)[1]
+			local cursor_line = api.nvim_win_get_cursor(self.windows.tc.winid)[1]
+			local total_testcases = #self.runner.tcdata
+			
+			-- If cursor is on the NEW line (last line), return special value
+			if cursor_line == total_testcases + 1 then
+				return "NEW"
+			end
+			
+			return cursor_line
+		end
+
+		local function is_new_mode()
+			return get_testcase_index_by_line() == "NEW"
 		end
 
 		-- kill current process
 		for _, map in ipairs(runner_ui_mappings.kill) do
 			self.windows.tc:map("n", map, function()
+				if is_new_mode() then return end
 				local tcindex = get_testcase_index_by_line()
 				self.runner:kill_process(tcindex)
 			end, { noremap = true })
@@ -197,6 +230,7 @@ function RunnerUI:show_ui()
 		-- run again current testcase
 		for _, map in ipairs(runner_ui_mappings.run_again) do
 			self.windows.tc:map("n", map, function()
+				if is_new_mode() then return end
 				local tcindex = get_testcase_index_by_line()
 				self.runner:kill_process(tcindex)
 				vim.schedule(function()
@@ -243,6 +277,33 @@ function RunnerUI:show_ui()
 		-- view stderr in a bigger window
 		for _, map in ipairs(runner_ui_mappings.view_stderr) do
 			open_viewer(map, "se")
+		end
+
+		-- add new testcase (now handled by inline NEW entry)
+		for _, map in ipairs(runner_ui_mappings.add_testcase) do
+			-- Skip mapping as add_testcase is now empty array and handled by NEW entry
+		end
+
+		-- edit current testcase inline
+		for _, map in ipairs(runner_ui_mappings.edit_testcase) do
+			self.windows.tc:map("n", map, function()
+				if is_new_mode() then
+					-- In NEW mode, focus on input window to start editing
+					api.nvim_set_current_win(self.windows.si.winid)
+					return
+				end
+				-- For regular testcases, just focus on input window since it's always editable
+				api.nvim_set_current_win(self.windows.si.winid)
+			end, { noremap = true })
+		end
+
+		-- delete current testcase
+		for _, map in ipairs(runner_ui_mappings.delete_testcase) do
+			self.windows.tc:map("n", map, function()
+				if is_new_mode() then return end
+				local tcindex = get_testcase_index_by_line()
+				self.runner:delete_testcase(tcindex)
+			end, { noremap = true })
 		end
 
 		self.windows.tc:on(nui_event.CursorMoved, function()
@@ -321,6 +382,11 @@ function RunnerUI:delete()
 	if self.ui_visible then
 		self:disable_diff_view() -- disable diff when closing windows to prevent conflicts with other diffviews
 	end
+	
+	-- Clean up any autocmds to prevent callback errors
+	pcall(api.nvim_del_augroup_by_name, "CompetiTestNewMode_" .. (self.windows.si and self.windows.si.bufnr or "unknown"))
+	pcall(api.nvim_del_augroup_by_name, "CompetiTestEditMode_" .. (self.update_testcase or "unknown") .. "_" .. (self.windows.si and self.windows.si.bufnr or "unknown"))
+	
 	for name, w in pairs(self.windows) do
 		if w then -- if a window is uninitialized its value is nil
 			w:unmount()
@@ -421,6 +487,25 @@ function RunnerUI:update_ui()
 			return
 		end
 
+		-- Determine current testcase based on cursor position
+		if self.ui_visible and self.windows.tc and api.nvim_win_is_valid(self.windows.tc.winid) then
+			local cursor_line = api.nvim_win_get_cursor(self.windows.tc.winid)[1]
+			local total_testcases = #self.runner.tcdata
+			
+			local new_update_testcase
+			if cursor_line == total_testcases + 1 then
+				new_update_testcase = "NEW"
+			else
+				new_update_testcase = cursor_line
+			end
+			
+			-- Only update details if testcase actually changed
+			if self.update_testcase ~= new_update_testcase then
+				self.update_testcase = new_update_testcase
+				self.update_details = true
+			end
+		end
+
 		-- update windows content if not already updated
 		if self.update_windows then
 			self.update_windows = false
@@ -466,6 +551,17 @@ function RunnerUI:update_ui()
 				table.insert(hlregions, hl)
 			end
 
+			-- Add the special "NEW" entry at the end
+			local add_line = { header = "NEW", status = "", time = "" }
+			local add_hl = { 
+				line = #lines, 
+				start_pos = 0, 
+				end_pos = 3, -- "NEW" is 3 characters
+				group = "Normal" -- Use white/default color
+			}
+			table.insert(lines, add_line)
+			table.insert(hlregions, add_hl)
+
 			-- render lines
 
 			---@type string[]
@@ -488,24 +584,231 @@ function RunnerUI:update_ui()
 		if self.update_details then
 			self.update_details = false
 
+			-- Handle NEW entry specially
+			if self.update_testcase == "NEW" then
+				-- Set editable buffers for input/output when in NEW mode
+				-- Always show placeholder text for NEW mode to guide user input
+				local function set_buf_new_mode(bufnr, placeholder)
+					vim.bo[bufnr].modifiable = true
+					vim.bo[bufnr].readonly = false
+					api.nvim_buf_set_lines(bufnr, 0, -1, false, placeholder)
+				end
+				
+				set_buf_new_mode(self.windows.si.bufnr, { "-- Enter input here --" })
+				set_buf_new_mode(self.windows.eo.bufnr, { "-- Enter expected output here (optional) --" })
+				
+				-- Output and errors windows should be read-only with placeholder text
+				local function set_buf_content_readonly(bufnr, content)
+					vim.bo[bufnr].modifiable = true
+					api.nvim_buf_set_lines(bufnr, 0, -1, false, content or {})
+					vim.bo[bufnr].modifiable = false
+					vim.bo[bufnr].readonly = true
+				end
+				
+				set_buf_content_readonly(self.windows.so.bufnr, { "-- Output will appear here after running --" })
+				set_buf_content_readonly(self.windows.se.bufnr, { "-- Errors will appear here after running --" })
+				
+				-- Manual save functionality for NEW mode
+				local si_bufnr = self.windows.si.bufnr
+				local eo_bufnr = self.windows.eo.bufnr
+				
+				-- Remove any existing :w handlers first
+				pcall(api.nvim_clear_autocmds, {
+					group = "CompetitestRunnerUINew_" .. si_bufnr,
+				})
+				pcall(api.nvim_clear_autocmds, {
+					group = "CompetitestRunnerUINew_" .. eo_bufnr,
+				})
+				
+				-- Function to save and run the new testcase
+				local function save_and_run_testcase()
+					-- Check if UI is still valid
+					if not self.ui_visible or not self.windows.tc or not api.nvim_win_is_valid(self.windows.tc.winid) then
+						return
+					end
+					
+					local input_lines = api.nvim_buf_get_lines(si_bufnr, 0, -1, false)
+					local output_lines = api.nvim_buf_get_lines(eo_bufnr, 0, -1, false)
+					
+					local input_text = table.concat(input_lines, "\n")
+					local output_text = table.concat(output_lines, "\n")
+					
+					-- Filter out placeholder text
+					if input_text == "-- Enter input here --" then
+						input_text = ""
+					end
+					if output_text == "-- Enter expected output here (optional) --" then
+						output_text = ""
+					end
+					
+					-- Normalize empty strings to make sure comparison works correctly
+					if output_text:match("^%s*$") then
+						output_text = ""
+					end
+					
+					-- Only proceed if there's some input and still in NEW mode
+					if input_text:match("%S") and self.update_testcase == "NEW" then
+						self.runner:add_inline_testcase(input_text, output_text)
+						
+						-- Clear input windows for next testcase
+						api.nvim_buf_set_lines(si_bufnr, 0, -1, false, { "-- Enter input here --" })
+						api.nvim_buf_set_lines(eo_bufnr, 0, -1, false, { "-- Enter expected output here (optional) --" })
+						
+						-- Move cursor back to testcase list and to the newly added testcase
+						vim.schedule(function()
+							if self.ui_visible and self.windows.tc and api.nvim_win_is_valid(self.windows.tc.winid) then
+								api.nvim_set_current_win(self.windows.tc.winid)
+								local new_line = #self.runner.tcdata
+								api.nvim_win_set_cursor(self.windows.tc.winid, {new_line, 0})
+							end
+						end)
+					end
+				end
+				
+				-- Add manual save keymaps for immediate save
+				api.nvim_buf_set_keymap(si_bufnr, 'n', '<C-s>', '', {
+					noremap = true,
+					silent = true,
+					callback = function()
+						pcall(save_and_run_testcase)
+					end
+				})
+				api.nvim_buf_set_keymap(eo_bufnr, 'n', '<C-s>', '', {
+					noremap = true,
+					silent = true,
+					callback = function()
+						pcall(save_and_run_testcase)
+					end
+				})
+				api.nvim_buf_set_keymap(si_bufnr, 'i', '<C-s>', '', {
+					noremap = true,
+					silent = true,
+					callback = function()
+						pcall(save_and_run_testcase)
+					end
+				})
+				api.nvim_buf_set_keymap(eo_bufnr, 'i', '<C-s>', '', {
+					noremap = true,
+					silent = true,
+					callback = function()
+						pcall(save_and_run_testcase)
+					end
+				})
+				
+				return
+			end
+
 			local data = self.runner.tcdata[self.update_testcase or 1]
 			if not data then
 				return
 			end
 
-			---Set buffer content
-			---@param bufnr integer
-			---@param content string[]? lines, or `nil` to make buffer empty
-			local function set_buf_content(bufnr, content)
+			-- Manual save for editable detail windows (input and expected output)
+			local si_bufnr = self.windows.si.bufnr
+			local eo_bufnr = self.windows.eo.bufnr
+			
+			-- Remove any existing keymaps first
+			pcall(api.nvim_buf_del_keymap, si_bufnr, 'n', '<C-s>')
+			pcall(api.nvim_buf_del_keymap, eo_bufnr, 'n', '<C-s>')
+			pcall(api.nvim_buf_del_keymap, si_bufnr, 'i', '<C-s>')
+			pcall(api.nvim_buf_del_keymap, eo_bufnr, 'i', '<C-s>')
+			
+			-- Function to save testcase changes
+			local function save_testcase_changes()
+				-- Check if UI is still valid
+				if not self.ui_visible or not self.windows.tc or not api.nvim_win_is_valid(self.windows.tc.winid) then
+					return
+				end
+				
+				local input_lines = api.nvim_buf_get_lines(si_bufnr, 0, -1, false)
+				local output_lines = api.nvim_buf_get_lines(eo_bufnr, 0, -1, false)
+				
+				local input_text = table.concat(input_lines, "\n")
+				local output_text = table.concat(output_lines, "\n")
+				
+				-- Get current testcase
+				local tcindex = self.update_testcase
+				if tcindex and tcindex ~= "NEW" and self.runner.tcdata[tcindex] then
+					local tc = self.runner.tcdata[tcindex]
+					-- Update the testcase data
+					tc.stdin = vim.split(input_text, "\n", { plain = true })
+					tc.expout = output_text ~= "" and vim.split(output_text, "\n", { plain = true }) or nil
+					
+					-- Save to file - normalize empty output for consistency
+					local normalized_output = output_text ~= "" and output_text or ""
+					local testcases = require("competitest.testcases")
+					local tctbl = testcases.buf_get_testcases(self.runner.bufnr)
+					tctbl[tc.tcnum] = { input = input_text, output = normalized_output }
+					
+					if self.runner.config.testcases_use_single_file then
+						testcases.single_file.buf_write(self.runner.bufnr, tctbl)
+					else
+						testcases.io_files.buf_write_pair(self.runner.bufnr, tc.tcnum, input_text, normalized_output)
+					end
+					
+					-- Re-run the testcase
+					tc.status = ""
+					tc.hlgroup = "CompetiTestRunning"
+					tc.stdout = nil
+					tc.stderr = nil
+					tc.time = nil
+					self.runner:update_ui(true)
+					self.runner:execute_testcase(tcindex, self.runner.rc, self.runner.running_directory)
+					
+					utils.notify("Testcase " .. tc.tcnum .. " saved and running", "INFO")
+				end
+			end
+			
+			-- Add manual save keymaps for immediate save
+			api.nvim_buf_set_keymap(si_bufnr, 'n', '<C-s>', '', {
+				noremap = true,
+				silent = true,
+				callback = function()
+					pcall(save_testcase_changes)
+				end
+			})
+			api.nvim_buf_set_keymap(eo_bufnr, 'n', '<C-s>', '', {
+				noremap = true,
+				silent = true,
+				callback = function()
+					pcall(save_testcase_changes)
+				end
+			})
+			api.nvim_buf_set_keymap(si_bufnr, 'i', '<C-s>', '', {
+				noremap = true,
+				silent = true,
+				callback = function()
+					pcall(save_testcase_changes)
+				end
+			})
+			api.nvim_buf_set_keymap(eo_bufnr, 'i', '<C-s>', '', {
+				noremap = true,
+				silent = true,
+				callback = function()
+					pcall(save_testcase_changes)
+				end
+			})
+
+			-- Set content for output windows (read-only)
+			local function set_buf_content_readonly(bufnr, content)
 				vim.bo[bufnr].modifiable = true
 				api.nvim_buf_set_lines(bufnr, 0, -1, false, content or {})
 				vim.bo[bufnr].modifiable = false
+				vim.bo[bufnr].readonly = true
 			end
 
-			set_buf_content(self.windows.so.bufnr, data.stdout)
-			set_buf_content(self.windows.eo.bufnr, data.expout)
-			set_buf_content(self.windows.si.bufnr, data.stdin)
-			set_buf_content(self.windows.se.bufnr, data.stderr)
+			-- Set content for input windows (editable)
+			local function set_buf_content_editable(bufnr, content)
+				vim.bo[bufnr].modifiable = true
+				vim.bo[bufnr].readonly = false
+				api.nvim_buf_set_lines(bufnr, 0, -1, false, content or {})
+			end
+
+			-- Set content: stdout and stderr are read-only, stdin and expected output are editable
+			set_buf_content_readonly(self.windows.so.bufnr, data.stdout)
+			set_buf_content_readonly(self.windows.se.bufnr, data.stderr)
+			set_buf_content_editable(self.windows.eo.bufnr, data.expout)
+			set_buf_content_editable(self.windows.si.bufnr, data.stdin)
 		end
 
 		if self.make_viewer_visible then
