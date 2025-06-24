@@ -384,8 +384,14 @@ function RunnerUI:delete()
 	end
 	
 	-- Clean up any autocmds to prevent callback errors
-	pcall(api.nvim_del_augroup_by_name, "CompetiTestNewMode_" .. (self.windows.si and self.windows.si.bufnr or "unknown"))
-	pcall(api.nvim_del_augroup_by_name, "CompetiTestEditMode_" .. (self.update_testcase or "unknown") .. "_" .. (self.windows.si and self.windows.si.bufnr or "unknown"))
+	if self.windows.si and self.windows.si.bufnr then
+		pcall(api.nvim_del_augroup_by_name, "CompetitestRunnerUINew_" .. self.windows.si.bufnr)
+		pcall(api.nvim_del_augroup_by_name, "CompetitestRunnerUIEdit_" .. self.windows.si.bufnr)
+	end
+	if self.windows.eo and self.windows.eo.bufnr then
+		pcall(api.nvim_del_augroup_by_name, "CompetitestRunnerUINew_" .. self.windows.eo.bufnr)
+		pcall(api.nvim_del_augroup_by_name, "CompetitestRunnerUIEdit_" .. self.windows.eo.bufnr)
+	end
 	
 	for name, w in pairs(self.windows) do
 		if w then -- if a window is uninitialized its value is nil
@@ -587,15 +593,17 @@ function RunnerUI:update_ui()
 			-- Handle NEW entry specially
 			if self.update_testcase == "NEW" then
 				-- Set editable buffers for input/output when in NEW mode
-				-- Always show placeholder text for NEW mode to guide user input
+				-- Use empty content for clean start
 				local function set_buf_new_mode(bufnr, placeholder)
 					vim.bo[bufnr].modifiable = true
 					vim.bo[bufnr].readonly = false
-					api.nvim_buf_set_lines(bufnr, 0, -1, false, placeholder)
+					vim.bo[bufnr].buftype = "" -- Make it a normal buffer so :w works
+					vim.bo[bufnr].modified = false -- Mark as not modified initially
+					api.nvim_buf_set_lines(bufnr, 0, -1, false, {}) -- Empty content
 				end
 				
-				set_buf_new_mode(self.windows.si.bufnr, { "-- Enter input here --" })
-				set_buf_new_mode(self.windows.eo.bufnr, { "-- Enter expected output here (optional) --" })
+				set_buf_new_mode(self.windows.si.bufnr, {})
+				set_buf_new_mode(self.windows.eo.bufnr, {})
 				
 				-- Output and errors windows should be read-only with placeholder text
 				local function set_buf_content_readonly(bufnr, content)
@@ -605,8 +613,8 @@ function RunnerUI:update_ui()
 					vim.bo[bufnr].readonly = true
 				end
 				
-				set_buf_content_readonly(self.windows.so.bufnr, { "-- Output will appear here after running --" })
-				set_buf_content_readonly(self.windows.se.bufnr, { "-- Errors will appear here after running --" })
+				set_buf_content_readonly(self.windows.so.bufnr, {})
+				set_buf_content_readonly(self.windows.se.bufnr, {})
 				
 				-- Manual save functionality for NEW mode
 				local si_bufnr = self.windows.si.bufnr
@@ -633,14 +641,6 @@ function RunnerUI:update_ui()
 					local input_text = table.concat(input_lines, "\n")
 					local output_text = table.concat(output_lines, "\n")
 					
-					-- Filter out placeholder text
-					if input_text == "-- Enter input here --" then
-						input_text = ""
-					end
-					if output_text == "-- Enter expected output here (optional) --" then
-						output_text = ""
-					end
-					
 					-- Normalize empty strings to make sure comparison works correctly
 					if output_text:match("^%s*$") then
 						output_text = ""
@@ -651,8 +651,8 @@ function RunnerUI:update_ui()
 						self.runner:add_inline_testcase(input_text, output_text)
 						
 						-- Clear input windows for next testcase
-						api.nvim_buf_set_lines(si_bufnr, 0, -1, false, { "-- Enter input here --" })
-						api.nvim_buf_set_lines(eo_bufnr, 0, -1, false, { "-- Enter expected output here (optional) --" })
+						api.nvim_buf_set_lines(si_bufnr, 0, -1, false, {})
+						api.nvim_buf_set_lines(eo_bufnr, 0, -1, false, {})
 						
 						-- Move cursor back to testcase list and to the newly added testcase
 						vim.schedule(function()
@@ -665,33 +665,27 @@ function RunnerUI:update_ui()
 					end
 				end
 				
-				-- Add manual save keymaps for immediate save
-				api.nvim_buf_set_keymap(si_bufnr, 'n', '<C-s>', '', {
-					noremap = true,
-					silent = true,
+				-- Add :w command handlers for immediate save
+				local si_augroup = api.nvim_create_augroup("CompetitestRunnerUINew_" .. si_bufnr, { clear = true })
+				local eo_augroup = api.nvim_create_augroup("CompetitestRunnerUINew_" .. eo_bufnr, { clear = true })
+				
+				api.nvim_create_autocmd("BufWriteCmd", {
+					group = si_augroup,
+					buffer = si_bufnr,
 					callback = function()
 						pcall(save_and_run_testcase)
+						-- Prevent actual file write
+						return true
 					end
 				})
-				api.nvim_buf_set_keymap(eo_bufnr, 'n', '<C-s>', '', {
-					noremap = true,
-					silent = true,
+				
+				api.nvim_create_autocmd("BufWriteCmd", {
+					group = eo_augroup,
+					buffer = eo_bufnr,
 					callback = function()
 						pcall(save_and_run_testcase)
-					end
-				})
-				api.nvim_buf_set_keymap(si_bufnr, 'i', '<C-s>', '', {
-					noremap = true,
-					silent = true,
-					callback = function()
-						pcall(save_and_run_testcase)
-					end
-				})
-				api.nvim_buf_set_keymap(eo_bufnr, 'i', '<C-s>', '', {
-					noremap = true,
-					silent = true,
-					callback = function()
-						pcall(save_and_run_testcase)
+						-- Prevent actual file write
+						return true
 					end
 				})
 				
@@ -707,11 +701,13 @@ function RunnerUI:update_ui()
 			local si_bufnr = self.windows.si.bufnr
 			local eo_bufnr = self.windows.eo.bufnr
 			
-			-- Remove any existing keymaps first
-			pcall(api.nvim_buf_del_keymap, si_bufnr, 'n', '<C-s>')
-			pcall(api.nvim_buf_del_keymap, eo_bufnr, 'n', '<C-s>')
-			pcall(api.nvim_buf_del_keymap, si_bufnr, 'i', '<C-s>')
-			pcall(api.nvim_buf_del_keymap, eo_bufnr, 'i', '<C-s>')
+			-- Remove any existing :w handlers first
+			pcall(api.nvim_clear_autocmds, {
+				group = "CompetitestRunnerUIEdit_" .. si_bufnr,
+			})
+			pcall(api.nvim_clear_autocmds, {
+				group = "CompetitestRunnerUIEdit_" .. eo_bufnr,
+			})
 			
 			-- Function to save testcase changes
 			local function save_testcase_changes()
@@ -759,33 +755,27 @@ function RunnerUI:update_ui()
 				end
 			end
 			
-			-- Add manual save keymaps for immediate save
-			api.nvim_buf_set_keymap(si_bufnr, 'n', '<C-s>', '', {
-				noremap = true,
-				silent = true,
+			-- Add :w command handlers for immediate save
+			local si_augroup = api.nvim_create_augroup("CompetitestRunnerUIEdit_" .. si_bufnr, { clear = true })
+			local eo_augroup = api.nvim_create_augroup("CompetitestRunnerUIEdit_" .. eo_bufnr, { clear = true })
+			
+			api.nvim_create_autocmd("BufWriteCmd", {
+				group = si_augroup,
+				buffer = si_bufnr,
 				callback = function()
 					pcall(save_testcase_changes)
+					-- Prevent actual file write
+					return true
 				end
 			})
-			api.nvim_buf_set_keymap(eo_bufnr, 'n', '<C-s>', '', {
-				noremap = true,
-				silent = true,
+			
+			api.nvim_create_autocmd("BufWriteCmd", {
+				group = eo_augroup,
+				buffer = eo_bufnr,
 				callback = function()
 					pcall(save_testcase_changes)
-				end
-			})
-			api.nvim_buf_set_keymap(si_bufnr, 'i', '<C-s>', '', {
-				noremap = true,
-				silent = true,
-				callback = function()
-					pcall(save_testcase_changes)
-				end
-			})
-			api.nvim_buf_set_keymap(eo_bufnr, 'i', '<C-s>', '', {
-				noremap = true,
-				silent = true,
-				callback = function()
-					pcall(save_testcase_changes)
+					-- Prevent actual file write
+					return true
 				end
 			})
 
@@ -801,6 +791,8 @@ function RunnerUI:update_ui()
 			local function set_buf_content_editable(bufnr, content)
 				vim.bo[bufnr].modifiable = true
 				vim.bo[bufnr].readonly = false
+				vim.bo[bufnr].buftype = "" -- Make it a normal buffer so :w works
+				vim.bo[bufnr].modified = false -- Mark as not modified initially
 				api.nvim_buf_set_lines(bufnr, 0, -1, false, content or {})
 			end
 
