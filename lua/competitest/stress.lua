@@ -205,6 +205,13 @@ function M.run()
 	local compile_cmd = bufcfg.compile_command[extension]
 	local run_cmd = bufcfg.run_command[extension]
 	
+	-- Debug: show configuration
+	append_output("🔍 Debug info:")
+	append_output("  Extension: " .. extension)
+	append_output("  Compile command: " .. (compile_cmd and vim.inspect(compile_cmd) or "nil"))
+	append_output("  Run command: " .. (run_cmd and vim.inspect(run_cmd) or "nil"))
+	append_output("")
+	
 	if not compile_cmd and not run_cmd then
 		utils.notify("No compile/run command configured for ." .. extension .. " files", "ERROR")
 		return
@@ -331,22 +338,38 @@ function M.run_stress_test(ui_bufnr, main_file, gen_file, brute_file, compile_cm
 			append_output("  Compiling " .. vim.fn.fnamemodify(file_path, ":t") .. "...")
 			
 			-- Build command with proper escaping
-			local cmd_parts = {cmd.exec}
-			if cmd.args then
-				for _, arg in ipairs(cmd.args) do
-					table.insert(cmd_parts, vim.fn.shellescape(arg))
+			local cmd_parts = {}
+			if cmd.exec and cmd.exec ~= "" then
+				table.insert(cmd_parts, cmd.exec)
+				if cmd.args then
+					for _, arg in ipairs(cmd.args) do
+						table.insert(cmd_parts, vim.fn.shellescape(arg))
+					end
 				end
+			else
+				append_output("❌ No compile command configured")
+				compile_success = false
+				break
 			end
+			
 			local full_cmd = "cd " .. vim.fn.shellescape(dir) .. " && " .. table.concat(cmd_parts, " ")
+			
+			-- Debug: show the actual command being executed
+			append_output("    Command: " .. full_cmd)
 			
 			local compile_result = vim.fn.system(full_cmd)
 			if vim.v.shell_error ~= 0 then
 				append_output("❌ Compilation failed for " .. vim.fn.fnamemodify(file_path, ":t"))
-				append_output(compile_result)
+				append_output("Exit code: " .. vim.v.shell_error)
+				append_output("Output: " .. compile_result)
 				compile_success = false
 				break
+			else
+				append_output("    ✅ Success")
 			end
 		end
+	else
+		append_output("⚠️  No compilation needed (interpreted language or no compile command configured)")
 	end
 	
 	if not compile_success then
