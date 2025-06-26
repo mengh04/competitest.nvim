@@ -77,6 +77,11 @@ function M.command(arguments)
 				M.receive(args[2])
 			end
 		end,
+		stress = function()
+			if check_subargs(1, 1) then
+				M.stress(args[2])
+			end
+		end,
 	}
 
 	local sub = subcommands[args[1]]
@@ -309,6 +314,22 @@ function M.receive(mode)
 
 	if error then
 		utils.notify("receive: " .. error .. ".")
+	end
+end
+
+---Handle stress testing (对拍)
+---@param action string action to perform: "run", "setup", "clean"
+function M.stress(action)
+	local stress = require("competitest.stress")
+	
+	if action == "run" then
+		stress.run()
+	elseif action == "setup" then
+		stress.setup()
+	elseif action == "clean" then
+		stress.clean()
+	else
+		utils.notify("stress: unknown action '" .. action .. "'. Available: run, setup, clean")
 	end
 end
 

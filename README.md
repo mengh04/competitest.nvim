@@ -28,6 +28,7 @@
 - [Run](#run-testcases) your program across all the testcases, showing results and execution data in a nice interactive UI
 - **Streamlined workflow**: Save and run testcases with simple key presses (`<CR>` in normal mode, `<C-s>` or `<C-CR>` in insert mode)
 - **Immediate feedback**: Changes to testcases are applied and executed instantly for rapid iteration
+- **Stress testing (对拍)**: Automatically compare your solution against a brute force implementation with generated test data to find edge cases and bugs
 - [Download](#receive-testcases-problems-and-contests) testcases, problems and contests automatically from competitive programming platforms
 - [Templates](#templates-for-received-problems-and-contests) for received problems and contests
 - View diff between actual and expected output
@@ -174,6 +175,46 @@ If you have previously closed the UI and you want to re-open it without re-execu
   - **Insert mode**: Press `<C-s>` or `<C-CR>` to save and run
 
 Of course all these keybindings can be customized: see `runner_ui` ➤ `mappings` in [configuration](#configuration)
+
+### Stress Testing (对拍)
+CompetiTest provides powerful stress testing functionality to help you quickly discover bugs in your algorithm implementation by comparing your solution with a brute force approach.
+
+#### Setup stress testing files
+```vim
+:CompetiTest stress setup
+```
+This command creates two files in the current directory:
+- `<filename>_gen.cpp` - Random test data generator
+- `<filename>_brute.cpp` - Brute force solution
+
+#### Writing the generator and brute force solution
+1. **Edit the generator** to output random test data that matches your problem's input format
+2. **Write a brute force solution** that is obviously correct, even if inefficient
+
+#### Run stress testing
+```vim
+:CompetiTest stress run
+```
+The system will:
+- Automatically compile your main solution, generator, and brute force solution
+- Loop through generating test data and comparing outputs
+- **Real-time rendering mode**: Only display the current test progress, with test numbers rapidly changing for a smooth experience
+- Stop immediately and show detailed information when a difference is found
+
+#### Clean up temporary files
+```vim
+:CompetiTest stress clean
+```
+
+#### Key Features
+- **Ultra-fast stress testing**: No timer delays, immediate execution of each test
+- **Real-time rendering**: UI only shows the latest test progress, overwriting the previous line for a fluid experience
+- **Rapid test switching**: Watch test numbers increment rapidly for an exciting testing experience  
+- **Instant error detection**: Stops immediately when differences are found and displays detailed information
+
+#### Controls in stress testing window
+- `Ctrl+C` - Stop the stress test
+- `q` - Close the window
 
 ### Receive testcases, problems and contests
 **NOTE:** to get this feature working you need to install [competitive-companion](https://github.com/jmerle/competitive-companion) extension in your browser.
