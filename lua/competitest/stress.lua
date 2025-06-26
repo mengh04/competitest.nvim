@@ -205,13 +205,6 @@ function M.run()
 	local compile_cmd = bufcfg.compile_command[extension]
 	local run_cmd = bufcfg.run_command[extension]
 	
-	-- Debug: show configuration
-	append_output("🔍 Debug info:")
-	append_output("  Extension: " .. extension)
-	append_output("  Compile command: " .. (compile_cmd and vim.inspect(compile_cmd) or "nil"))
-	append_output("  Run command: " .. (run_cmd and vim.inspect(run_cmd) or "nil"))
-	append_output("")
-	
 	if not compile_cmd and not run_cmd then
 		utils.notify("No compile/run command configured for ." .. extension .. " files", "ERROR")
 		return
@@ -301,6 +294,13 @@ function M.run_stress_test(ui_bufnr, main_file, gen_file, brute_file, compile_cm
 	append_output("📝 Main: " .. basename .. "." .. extension)
 	append_output("🎲 Generator: " .. basename .. "_gen." .. extension)
 	append_output("🐌 Brute: " .. basename .. "_brute." .. extension)
+	append_output("")
+	
+	-- Debug: show configuration
+	append_output("🔍 Debug info:")
+	append_output("  Extension: " .. extension)
+	append_output("  Compile command: " .. (compile_cmd and vim.inspect(compile_cmd) or "nil"))
+	append_output("  Run command: " .. (run_cmd and vim.inspect(run_cmd) or "nil"))
 	append_output("")
 	
 	-- Compilation step
