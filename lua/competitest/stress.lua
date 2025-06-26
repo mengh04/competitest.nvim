@@ -330,7 +330,16 @@ function M.run_stress_test(ui_bufnr, main_file, gen_file, brute_file, compile_cm
 			
 			append_output("  Compiling " .. vim.fn.fnamemodify(file_path, ":t") .. "...")
 			
-			local compile_result = vim.fn.system(table.concat(vim.list_extend({cmd.exec}, cmd.args or {}), " "))
+			-- Build command with proper escaping
+			local cmd_parts = {cmd.exec}
+			if cmd.args then
+				for _, arg in ipairs(cmd.args) do
+					table.insert(cmd_parts, vim.fn.shellescape(arg))
+				end
+			end
+			local full_cmd = "cd " .. vim.fn.shellescape(dir) .. " && " .. table.concat(cmd_parts, " ")
+			
+			local compile_result = vim.fn.system(full_cmd)
 			if vim.v.shell_error ~= 0 then
 				append_output("❌ Compilation failed for " .. vim.fn.fnamemodify(file_path, ":t"))
 				append_output(compile_result)
@@ -359,10 +368,10 @@ function M.run_stress_test(ui_bufnr, main_file, gen_file, brute_file, compile_cm
 	local running = true    -- Control flag for stopping
 	
 	-- Pre-compile command strings for better performance
-	local gen_executable = "./" .. basename .. "_gen"
-	local main_executable = "./" .. basename
-	local brute_executable = "./" .. basename .. "_brute"
-	local cd_cmd = "cd " .. dir .. " && "
+	local gen_executable = "./" .. vim.fn.shellescape(basename .. "_gen")
+	local main_executable = "./" .. vim.fn.shellescape(basename)
+	local brute_executable = "./" .. vim.fn.shellescape(basename .. "_brute")
+	local cd_cmd = "cd " .. vim.fn.shellescape(dir) .. " && "
 	
 	-- Recursive function for immediate execution of each test
 	local function run_single_test()
@@ -403,7 +412,7 @@ function M.run_stress_test(ui_bufnr, main_file, gen_file, brute_file, compile_cm
 		end
 		
 		-- Run main solution
-		local main_output = vim.fn.system(cd_cmd .. "echo '" .. input_data .. "' | " .. main_executable)
+		local main_output = vim.fn.system(cd_cmd .. "echo " .. vim.fn.shellescape(input_data) .. " | " .. main_executable)
 		if vim.v.shell_error ~= 0 then
 			append_output("❌ Main solution failed at test " .. test_count)
 			append_output("Input: " .. input_data:gsub("\n", " "))
@@ -412,7 +421,7 @@ function M.run_stress_test(ui_bufnr, main_file, gen_file, brute_file, compile_cm
 		end
 		
 		-- Run brute force solution
-		local brute_output = vim.fn.system(cd_cmd .. "echo '" .. input_data .. "' | " .. brute_executable)
+		local brute_output = vim.fn.system(cd_cmd .. "echo " .. vim.fn.shellescape(input_data) .. " | " .. brute_executable)
 		if vim.v.shell_error ~= 0 then
 			append_output("❌ Brute force solution failed at test " .. test_count)
 			append_output("Input: " .. input_data:gsub("\n", " "))
